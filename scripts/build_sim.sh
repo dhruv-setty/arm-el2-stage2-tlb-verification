@@ -11,4 +11,4 @@ sail -c spec/sail/stage2.sail spec/sail/tlbi_scope.sail spec/sail/checks.sail sp
 gcc -O1 -include sim/read_pt.h build/sail_checks.c sim/read_pt_stub.c "$L"/*.c -I"$L" -lgmp -lz -o build/sail_checks
 rm -f sail_smt_cache
 rm -rf build/obj_w
-verilator -Wall -Wno-UNUSEDSIGNAL --cc --exe --build -O2 --Mdir build/obj_w rtl/s2_walker.sv sim/tb_s2_walker.cpp -o tb_s2_walker >/dev/null
+verilator -Wall -Wno-UNUSEDSIGNAL --cc --exe --build -O2 --Mdir build/obj_w "$PWD/rtl/s2_walker.sv" "$PWD/sim/tb_s2_walker.cpp" -o tb_s2_walker >/dev/null
