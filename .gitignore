@@ -1,5 +1,5 @@
 build/
-tools/
+tools/*.jar
 sail_smt_cache
 states/
 *_TTrace_*
