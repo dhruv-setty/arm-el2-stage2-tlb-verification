@@ -1,2 +1,4 @@
-# Auto-merge README updates by concatenating both sides to reduce false conflicts.
-README.md merge=union
+# The RTL is SystemVerilog, a superset of Verilog; reported under Verilog.
+*.sv linguist-language=Verilog
+*.sail linguist-language=Sail
+bench/results/** linguist-generated

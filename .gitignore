@@ -1,32 +1,5 @@
-# IDE
-.idea/
-.vscode/settings.json
-*.swp
-
-# Lean build
 build/
-.lake/
-.lean/
-
-# Python
-__pycache__/
-*.pyc
-
-# Node
-node_modules/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Temporary
-*.tmp
-*~
-
-# Nmap orchestration artifacts
-lean/iato_v7/.nmap-path-policy.json
-lean/iato_v7/nmap-path-state.xml
-lean/iato_v7/mcp-orchestration.jsonl
-
-# Local audit configuration (may contain environment-specific/sensitive values)
-config.local.toml
+tools/
+sail_smt_cache
+states/
+*_TTrace_*
