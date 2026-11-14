@@ -34,7 +34,7 @@ mkdir -p build
 iverilog -g2012 -o build/tb_s2_tlb rtl/tb/tb_s2_tlb.sv rtl/s2_tlb.sv 2>/dev/null \
   && vvp -n build/tb_s2_tlb | grep -q "^PASS" && ok "sim tb_s2_tlb (TLBI scopes, VMID and ASID tagging)" || bad "sim tb_s2_tlb"
 
-if ./scripts/build_sim.sh >/dev/null 2>&1; then
+if ./scripts/build_sim.sh > build/build.log 2>&1; then
   build/sail_checks | grep -q "^PASS" && ok "sail tlbi scope (8 assertions)" || bad "sail tlbi scope"
   for seed in 1 2 3; do
     python3 tools/s2_vectors.py "$seed" 2000 >/dev/null
@@ -43,7 +43,7 @@ if ./scripts/build_sim.sh >/dev/null 2>&1; then
   done
   python3 tools/s2_vectors.py 1 400 >/dev/null
 else
-  bad "build sail reference and walker harness"
+  tail -40 build/build.log; bad "build sail reference and walker harness"
 fi
 
 if command -v yosys >/dev/null; then
