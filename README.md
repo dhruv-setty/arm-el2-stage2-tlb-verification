@@ -1,4 +1,4 @@
-# IĀTŌ v7
+# IĀTŌ v7: Stage 2 Translation and TLB Maintenance
 
 [![check](https://github.com/whatheheckisthis/Intent-to-Auditable-Trust-Object-v7/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/whatheheckisthis/Intent-to-Auditable-Trust-Object-v7/actions/workflows/check.yml)
 ![release](https://img.shields.io/badge/release-v0.2.0-blue)
@@ -9,115 +9,154 @@
 ![FPGA](https://img.shields.io/badge/ECP5-236.57%20MHz%20walker-success)
 ![vectors](https://img.shields.io/badge/cross%20check-10%2C000%20probes%2C%200%20mismatches-success)
 
-**The Arm piece of the IĀTŌ series.** Stage 2 translation and TLB maintenance for a hypervisor at EL2, written as a Sail reference model, checked in TLA+, built as Verilog, and tested against the model.
+IĀTŌ v7 is the Arm virtualisation component of the IĀTŌ series. It defines, verifies and implements Stage 2 address translation and TLB maintenance for a hypervisor executing at EL2. A Sail model serves as the normative reference. A TLA+ specification verifies the unmap sequence. The SystemVerilog implementation is validated against the reference by automated cross check.
 
-The main [IĀTŌ](https://github.com/whatheheckisthis/Intent-to-Auditable-Trust-Object) repo covers coherence, PCIe and DMA. This one covers what happens between a guest's physical address and the real one: how a Stage 2 walk reads four levels of tables, which faults it raises, and which TLB entries survive which TLBI. Every number below comes from `./scripts/check.sh` or `./bench/run.sh`, and CI repeats the checks on every push.
+The companion repository, [IĀTŌ](https://github.com/whatheheckisthis/Intent-to-Auditable-Trust-Object), covers coherence, PCIe ordering and DMA. Together the two repositories apply one method: state the required behaviour first, then design, verify and measure against it.
+
+All figures in this document are produced by `./scripts/check.sh` and `./bench/run.sh`. Continuous integration repeats every check on each push.
 
 ## Contents
 
-1. [Results at a glance](#1-results-at-a-glance)
-2. [System](#2-system)
-3. [Stage 2 walker](#3-stage-2-walker)
-4. [Unmapping a guest page](#4-unmapping-a-guest-page)
-5. [TLBI scopes](#5-tlbi-scopes)
-6. [Synthesis](#6-synthesis)
-7. [Layout](#7-layout)
-8. [Roadmap](#8-roadmap)
-9. [History](#9-history)
-10. [License](#10-license)
+1. [Scope](#1-scope)
+2. [Conventions](#2-conventions)
+3. [Verification summary](#3-verification-summary)
+4. [Architecture](#4-architecture)
+5. [Stage 2 walker requirements](#5-stage-2-walker-requirements)
+6. [Unmap sequence requirements](#6-unmap-sequence-requirements)
+7. [TLBI scope requirements](#7-tlbi-scope-requirements)
+8. [Implementation results](#8-implementation-results)
+9. [Repository layout](#9-repository-layout)
+10. [Build and verification](#10-build-and-verification)
+11. [Limitations](#11-limitations)
+12. [Roadmap](#12-roadmap)
+13. [Version history](#13-version-history)
+14. [License](#14-license)
 
-## 1. Results at a glance
+## 1. Scope
 
-| Area | Artefact | Result |
-|---|---|---|
-| Stage 2 model | `spec/sail/stage2.sail` | 4 KiB granule, 48 bit IPA, start level 0. Table, block (1 GiB, 2 MiB) and page descriptors; translation, access flag and permission faults with the level they occur at. Compiled to C and used as the reference |
-| Cross check | `tools/s2_vectors.py`, `sim/s2_ref.c`, `sim/tb_s2_walker.cpp` | 10,000 probes over five random table sets: Sail, an independent Python walker and the RTL agree on every one, 2,556 translations and the rest faults |
-| Walker RTL | `rtl/s2_walker.sv` | One table read in flight. A four level walk takes 9 cycles at memory latency 1 and 133 at latency 32 |
-| Unmap sequence | `spec/tla/S2Unmap.tla` | Clear, DSB, TLBI IPAS2E1IS, DSB, TLBI VMALLE1IS, DSB, free holds over 74 states. Dropping VMALLE1IS, or issuing it before IPAS2E1IS, lets a guest reach a freed frame |
-| TLBI scopes | `spec/sail/tlbi_scope.sail`, `rtl/s2_tlb.sv` | Stage 2 only and combined entries tagged by VMID and ASID; four TLBI scopes; 8 Sail assertions and 13 directed RTL checks pass |
-| Synthesis | `bench/synth.sh` | ECP5: walker 370 LUT4 at 236.57 MHz, 8 entry TLB 3,246 LUT4 at 136.72 MHz |
+This repository covers the following:
 
-## 2. System
+| In scope | Out of scope |
+|---|---|
+| Stage 2 translation, 4 KiB granule, 48 bit IPA, start level 0 | 16 KiB and 64 KiB granules, concatenated start tables |
+| Table, block and page descriptors; translation, access flag and permission faults | Hardware access flag and dirty state update (FEAT_HAFDBS) |
+| Stage 2 only and combined TLB entries tagged by VMID and ASID | Stage 1 translation, which is modelled only as a source of combined entries |
+| TLBI IPAS2E1IS, VMALLE1IS, VMALLS12E1IS and VAE1IS | Range TLBI operations and FEAT_TLBIOS variants |
+| Unmap ordering for one IPA page across two cores | Multi page unmap and break before make on live remapping |
+
+Architectural behaviour follows ARM DDI 0487K. Sources are listed in [docs/references.md](docs/references.md).
+
+## 2. Conventions
+
+The key words **shall**, **shall not**, **should** and **may** are to be read as described in RFC 2119.
+
+Each requirement carries an identifier, such as `S2-W-03`. Each requirement maps to at least one automated check, and section 3 lists the check for every requirement.
+
+## 3. Verification summary
+
+| Area | Artefact | Method | Result |
+|---|---|---|---|
+| Stage 2 reference | `spec/sail/stage2.sail` | Sail compiled to C | Reference for all walker checks |
+| Walker conformance | `rtl/s2_walker.sv` | 10,000 random probes across five table sets, compared with Sail and an independent Python walker | 0 mismatches. A planted permission fault produces 330 mismatches in 2,000 probes |
+| Unmap ordering | `spec/tla/S2Unmap.tla` | TLC model checking, three configurations | The required sequence holds over 74 states. Both incorrect orderings violate `NoUseAfterFree` |
+| TLBI scope | `spec/sail/tlbi_scope.sail`, `rtl/s2_tlb.sv` | 8 Sail assertions, 13 directed RTL checks | Pass |
+| Synthesis | `bench/synth.sh` | Yosys and nextpnr, Lattice ECP5 LFE5U-25F | Walker 370 LUT4 at 236.57 MHz. 8 entry TLB 3,246 LUT4 at 136.72 MHz |
+
+## 4. Architecture
 
 ```
-   guest (EL1)                    hypervisor (EL2)                   checked by
-  -------------                  ------------------                 ------------
+   guest (EL1)                    hypervisor (EL2)                   verified by
+  -------------                  ------------------                 -------------
   VA --stage 1--> IPA
                    |
                    v
            +---------------+  miss   +----------------+  4 reads   +-------------------+
-           | s2_tlb.sv     |-------> | s2_walker.sv   |----------> | stage 2 tables    |
+           | s2_tlb.sv     |-------> | s2_walker.sv   |----------> | Stage 2 tables    |
            | S2 only and   |  fill   | L0 L1 L2 L3    | <--------- | in memory         |
            | combined, by  | <------ | faults: trans, |   desc     | VTTBR_EL2 base    |
            | VMID and ASID |         | AF, permission |            +-------------------+
            +---------------+         +----------------+
                    ^                         |                     Sail stage2.sail
-                   | TLBI IPAS2E1IS          v PA or fault         s2_vectors.py + s2_ref.c
+                   | TLBI IPAS2E1IS          v PA or fault         s2_vectors.py, s2_ref.c
                    | TLBI VMALLE1IS                                tb_s2_walker (Verilator)
                    | TLBI VMALLS12E1IS
                    | TLBI VAE1IS                                   Sail tlbi_scope.sail
                    |                                               tb_s2_tlb (Icarus)
            +------------------------------------------------+
            | unmap: clear desc, DSB, IPAS2E1IS, DSB,        |      S2Unmap.tla
-           |        VMALLE1IS, DSB, free frame              |      3 configs
+           |        VMALLE1IS, DSB, free frame              |      three configurations
            +------------------------------------------------+
 ```
 
-Full tables for every run are in [docs/RESULTS.md](docs/RESULTS.md).
+## 5. Stage 2 walker requirements
 
-## 3. Stage 2 walker
+| ID | Requirement | Verified by |
+|---|---|---|
+| S2-W-01 | The walker shall resolve a 48 bit IPA from the VTTBR_EL2 base in at most four levels, indexing nine IPA bits per level. | Walker cross check |
+| S2-W-02 | The walker shall raise a translation fault, with its level, on an invalid descriptor. | Walker cross check |
+| S2-W-03 | The walker shall treat a block descriptor at level 0, and descriptor type 0b01 at level 3, as reserved and raise a translation fault. | Walker cross check |
+| S2-W-04 | The walker shall raise an access flag fault when AF is clear. It shall not update AF. | Walker cross check |
+| S2-W-05 | The walker shall grant reads only when S2AP[0] is set, and writes only when S2AP[1] is set. Otherwise it shall raise a permission fault. | Walker cross check, planted fault |
+| S2-W-06 | The walker shall return the same result encoding as the Sail reference: bit 63 fault, bits 62 to 60 kind, bits 59 to 58 level, bits 47 to 0 output address. | Walker cross check |
 
-The walker takes VTTBR_EL2's base, an IPA and read or write. Each level indexes nine bits of the IPA, reads one descriptor, and either follows a table, stops at a block or page, or faults. A block at level 0 and type 0b01 at level 3 are reserved and fault as translation faults. AF clear faults (no hardware update), and S2AP decides read and write. The result word carries the fault kind and level or the output address, the same encoding the Sail model returns.
+The probe generator, `tools/s2_vectors.py`, builds random tables with pages, 2 MiB blocks, 1 GiB blocks, invalid descriptors, reserved descriptors, AF clear and every S2AP value. It then probes addresses inside and outside each mapping. The Sail reference, the Python walker and the RTL shall agree on every probe.
 
-**Cross check.** `tools/s2_vectors.py` builds random tables with pages, 2 MiB and 1 GiB blocks, invalid and reserved descriptors, AF clear and every S2AP value, then probes inside and outside the mappings. The Sail model, the Python walker and the RTL must agree on every probe. A deliberate bug that swaps the read and write permission bits in the RTL shows up as 330 mismatches in 2,000 probes.
+## 6. Unmap sequence requirements
 
-| Memory latency | Cycles per walk, all probes | Four level walk |
+| ID | Requirement | Verified by |
+|---|---|---|
+| S2-U-01 | A hypervisor removing an IPA page from a guest shall clear the descriptor, issue DSB, issue TLBI IPAS2E1IS, issue DSB, issue TLBI VMALLE1IS and issue DSB before it frees the frame. | `S2Unmap` |
+| S2-U-02 | The hypervisor shall not omit TLBI VMALLE1IS. TLBI IPAS2E1IS does not remove combined entries. | `S2Unmap_no_vmalle1` |
+| S2-U-03 | The hypervisor shall not issue TLBI VMALLE1IS before TLBI IPAS2E1IS has completed. A core may refill a combined entry from a cached Stage 2 entry in between. | `S2Unmap_vmalle1_first` |
+
+The model contains two cores. Each core may cache a Stage 2 entry and a combined entry, and may refill a combined entry from a cached Stage 2 entry without reading the tables. Broadcast TLBIs complete at the next DSB. The safety property `NoUseAfterFree` states that no guest access reaches the frame after it is freed.
+
+| Configuration | Sequence | Result |
+|---|---|---|
+| `S2Unmap` | clear, DSB, IPAS2E1IS, DSB, VMALLE1IS, DSB, free | Holds, 74 states |
+| `S2Unmap_no_vmalle1` | clear, DSB, IPAS2E1IS, DSB, free | Violated: a combined entry survives the free |
+| `S2Unmap_vmalle1_first` | clear, DSB, VMALLE1IS, DSB, IPAS2E1IS, DSB, free | Violated: a combined entry is refilled after VMALLE1IS |
+
+Instruction order is therefore a correctness requirement, not an optimisation.
+
+## 7. TLBI scope requirements
+
+| ID | Operation | The TLB shall remove |
+|---|---|---|
+| S2-T-01 | IPAS2E1IS | Stage 2 only entries of the VMID for the IPA page |
+| S2-T-02 | VMALLE1IS | Combined entries of the VMID |
+| S2-T-03 | VMALLS12E1IS | All entries of the VMID |
+| S2-T-04 | VAE1IS | Combined entries of the VMID for the VA page, with a matching ASID or the global attribute |
+| S2-T-05 | Any operation | No entry of any other VMID |
+
+Lookups shall match on VMID. Combined lookups shall also match on ASID unless the entry is global. The Sail definition and `s2_tlb.sv` are verified against the same cases.
+
+## 8. Implementation results
+
+**Walk latency.** The walker holds one table read in flight. A full walk costs 1 + 4 x (latency + 1) cycles.
+
+| Memory latency (cycles) | Mean cycles per walk, all probes | Four level walk |
 |---|---|---|
 | 1 | 6.22 | 9 cycles |
 | 8 | 24.49 | 37 cycles |
 | 32 | 87.11 | 133 cycles |
 
-Seed 1, 2,000 probes. A walk costs one cycle to accept plus one issue cycle and the latency per level, so a full walk is 1 + 4 x (latency + 1). Most probes fault early, which is why the average is lower. Overlapping walks, or caching upper levels, is the next step.
+Seed 1, 2,000 probes. The mean is lower than the four level figure because most faulting probes terminate at an early level.
 
-## 4. Unmapping a guest page
-
-`S2Unmap.tla` has two cores that can cache a stage 2 entry for the page and a combined entry for the guest VA that maps to it, and can refill a combined entry from a cached stage 2 entry without reading the tables. Broadcast TLBIs complete at the next DSB.
-
-| Sequence | Result |
-|---|---|
-| clear, DSB, IPAS2E1IS, DSB, VMALLE1IS, DSB, free | holds, 74 states |
-| clear, DSB, IPAS2E1IS, DSB, free | a combined entry survives and reaches the freed frame |
-| clear, DSB, VMALLE1IS, DSB, IPAS2E1IS, DSB, free | a core refills a combined entry from its stage 2 entry after VMALLE1IS, and keeps it past the free |
-
-The order matters, not just the set of TLBIs.
-
-## 5. TLBI scopes
-
-| TLBI | Removes |
-|---|---|
-| IPAS2E1IS | Stage 2 only entries of the VMID for that IPA page |
-| VMALLE1IS | Combined entries of the VMID |
-| VMALLS12E1IS | Every entry of the VMID |
-| VAE1IS | Combined entries of the VMID for that VA page, matching ASID or global |
-
-Other VMIDs are never touched. The Sail definition and `s2_tlb.sv` are checked against the same cases.
-
-## 6. Synthesis
-
-Yosys `synth_ecp5`, then nextpnr out of context on a Lattice LFE5U-25F, seed 1. Open tool estimates on a small FPGA, not vendor or ASIC numbers.
+**Synthesis.** Yosys `synth_ecp5`, then nextpnr out of context on a Lattice LFE5U-25F, seed 1. These are open tool estimates on a small FPGA. They are not vendor tool or ASIC figures.
 
 | Module | LUT4 | FF | Carry | Post route Fmax |
 |---|---|---|---|---|
 | s2_walker | 370 | 143 | 0 | 236.57 MHz |
 | s2_tlb | 3,246 | 859 | 0 | 136.72 MHz |
 
-The TLB is a flat compare across eight entries with four TLBI match rules, which is where the LUTs go.
+The TLB implements a fully associative compare across eight entries with four TLBI match rules, which accounts for most of its logic. Full result tables are in [docs/RESULTS.md](docs/RESULTS.md).
 
-## 7. Layout
+## 9. Repository layout
 
 ```
 spec/sail/       stage2.sail, tlbi_scope.sail, checks.sail, main.sail
-spec/tla/        S2Unmap.tla and three configs
+spec/tla/        S2Unmap.tla and three configurations
 rtl/             s2_walker.sv, s2_tlb.sv
 rtl/tb/          tb_s2_tlb.sv (Icarus)
 sim/             tb_s2_walker.cpp (Verilator), s2_ref.c (Sail harness)
@@ -127,20 +166,39 @@ scripts/         check.sh, build_sim.sh
 docs/            references.md, RESULTS.md
 ```
 
-Requirements: Java 11 or later, Python 3, Sail 0.20 with libgmp, a C compiler, Icarus Verilog, Verilator, and optionally Yosys and nextpnr-ecp5.
+## 10. Build and verification
 
-## 8. Roadmap
+Prerequisites: Java 11 or later, Python 3, Sail 0.20 with libgmp, a C compiler, Icarus Verilog and Verilator. Yosys and nextpnr-ecp5 are optional and enable synthesis.
 
-1. QEMU: run the same tables in a TCG guest at EL2 and compare faults and output addresses with the Sail model.
-2. Walker: overlap walks and cache level 0 to 2 descriptors; measure the gain at latency 32.
-3. Concatenated start tables and a 40 bit IPA (start level 1), as KVM commonly uses.
-4. Hardware access flag and dirty state update (FEAT_HAFDBS).
-5. Join the walker, TLB and TLBI unit into one block and synthesise it together.
+```
+./scripts/check.sh    # model checking, Sail assertions, cross check, RTL tests, synthesis
+./bench/run.sh        # five seed cross check and latency sweep
+./bench/synth.sh      # ECP5 synthesis only
+```
 
-## 9. History
+`check.sh` exits non zero if any passing configuration fails, or if either incorrect unmap ordering fails to violate `NoUseAfterFree`.
 
-The v0.1.0 Lean 4 specification review, with its findings against DDI0487K, DDI0608A, KVM, QEMU and Cobalt documentation, is preserved at the tag `archive/lean-v0.1.0`.
+## 11. Limitations
 
-## 10. License
+- All results come from simulation and open tool synthesis. No physical FPGA or silicon measurement has been performed.
+- The TLA+ model covers one IPA page and two cores. It does not model memory ordering beyond DSB completion.
+- The walker and TLB are synthesised as separate blocks. Integrated timing has not been measured.
+
+## 12. Roadmap
+
+1. Cross check the walker and TLBI scopes against a QEMU TCG guest at EL2.
+2. Overlap walks and cache level 0 to 2 descriptors, then measure the gain at latency 32.
+3. Support concatenated start tables and a 40 bit IPA with start level 1.
+4. Implement hardware access flag and dirty state update (FEAT_HAFDBS).
+5. Integrate the walker, TLB and TLBI unit, then synthesise them as one block.
+
+## 13. Version history
+
+| Version | Content |
+|---|---|
+| v0.2.0 | Stage 2 reference model, unmap verification, walker and TLB implementation, cross check and synthesis |
+| v0.1.0 | Lean 4 specification review against DDI 0487K, DDI 0608A, KVM and QEMU. Preserved at tag `archive/lean-v0.1.0` |
+
+## 14. License
 
 Apache 2.0. See `LICENSE`.
