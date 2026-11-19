@@ -1,0 +1,20 @@
+$ sail --version
+Sail 0.20.3 (sail2 @ 60695b1ea377048f0adc39c62671cd099b2ed9f6)
+$ build/sail_checks
+PASS sail tlbi scope
+$ python3 tools/s2_vectors.py 1 2000 && build/s2_ref
+seed 1: 2000 probes, 2793 table words, access flag 74, ok 505, permission 347, translation 1074
+PASS sail stage 2: 2000 probes, 0 mismatches
+$ python3 tools/s2_vectors.py 2 2000 && build/s2_ref
+seed 2: 2000 probes, 2715 table words, access flag 69, ok 508, permission 347, translation 1076
+PASS sail stage 2: 2000 probes, 0 mismatches
+$ python3 tools/s2_vectors.py 3 2000 && build/s2_ref
+seed 3: 2000 probes, 2744 table words, access flag 88, ok 535, permission 308, translation 1069
+PASS sail stage 2: 2000 probes, 0 mismatches
+$ python3 tools/s2_vectors.py 4 2000 && build/s2_ref
+seed 4: 2000 probes, 2801 table words, access flag 71, ok 535, permission 314, translation 1080
+PASS sail stage 2: 2000 probes, 0 mismatches
+$ python3 tools/s2_vectors.py 5 2000 && build/s2_ref
+seed 5: 2000 probes, 2772 table words, access flag 84, ok 473, permission 355, translation 1088
+PASS sail stage 2: 2000 probes, 0 mismatches
+exit status 0

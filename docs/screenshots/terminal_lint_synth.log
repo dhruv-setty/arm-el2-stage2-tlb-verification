@@ -1,0 +1,17 @@
+Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
+$ verilator --lint-only -Wall -Wno-UNUSEDSIGNAL rtl/s2_walker.sv
+ok    lint rtl/s2_walker.sv
+$ verilator --lint-only -Wall -Wno-UNUSEDSIGNAL rtl/s2_tlb.sv
+ok    lint rtl/s2_tlb.sv
+$ yosys -V
+Yosys 0.33 (git sha1 2584903a060)
+$ nextpnr-ecp5 --version
+"nextpnr-ecp5" -- Next Generation Place and Route (Version 0.6-3build5)
+$ bench/synth.sh
+Warning: Replacing memory \pa with list of registers. See rtl/s2_tlb.sv:67
+Warning: Replacing memory \page with list of registers. See rtl/s2_tlb.sv:67
+Warning: Replacing memory \asid with list of registers. See rtl/s2_tlb.sv:67
+Warning: Replacing memory \vmid with list of registers. See rtl/s2_tlb.sv:67
+module,LUT4,FF,CCU2C carry,fmax_mhz
+s2_walker,296,143,0,213.95
+s2_tlb,3198,859,16,92.58

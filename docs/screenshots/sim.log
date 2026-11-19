@@ -1,0 +1,20 @@
+Icarus Verilog version 12.0 (stable) ()
+$ iverilog -g2012 -s tb_s2_tlb -o tb_s2_tlb.vvp rtl/tb/tb_s2_tlb.sv rtl/s2_tlb.sv
+rtl/s2_tlb.sv:55: vvp.tgt sorry: Case unique/unique0 qualities are ignored.
+$ vvp tb_s2_tlb.vvp
+PASS tb_s2_tlb
+rtl/tb/tb_s2_tlb.sv:65: $finish called at 401000 (1ps)
+Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
+$ python3 tools/s2_vectors.py 1 2000
+seed 1: 2000 probes, 2793 table words, access flag 74, ok 505, permission 347, translation 1074
+$ build/s2_ref
+PASS sail stage 2: 2000 probes, 0 mismatches
+$ build/obj_w/tb_s2_walker 1
+PASS rtl stage 2 walker: 2000 probes, 0 mismatches, latency 1, 6.22 cycles and 2.61 table reads per walk, 512 four level walks at 9.00 cycles
+$ build/obj_w/tb_s2_walker 8
+PASS rtl stage 2 walker: 2000 probes, 0 mismatches, latency 8, 24.49 cycles and 2.61 table reads per walk, 512 four level walks at 37.00 cycles
+$ build/obj_w/tb_s2_walker 32
+PASS rtl stage 2 walker: 2000 probes, 0 mismatches, latency 32, 87.11 cycles and 2.61 table reads per walk, 512 four level walks at 133.00 cycles
+exit status 0
+PASS rtl stage 2 walker (traced): 2000 probes, 0 mismatches, latency 1, 6.22 cycles and 2.61 table reads per walk, 512 four level walks at 9.00 cycles
+PASS rtl stage 2 walker (traced): 2000 probes, 0 mismatches, latency 8, 24.49 cycles and 2.61 table reads per walk, 512 four level walks at 37.00 cycles

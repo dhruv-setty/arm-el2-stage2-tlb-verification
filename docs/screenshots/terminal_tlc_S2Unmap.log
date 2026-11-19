@@ -1,0 +1,15 @@
+$ java -cp tla2tools.jar tlc2.TLC -workers 1 -difftrace -config S2Unmap.cfg S2Unmap.tla
+TLC2 Version 2026.11.15.002146 (rev: bc1b506)
+Running breadth-first search Model-Checking with fp 123 and seed -9121239761759633358 with 1 worker on 4 cores with 3552MB heap and 64MB offheap memory [pid: 4963] (Linux 7.0.0-1017-azure amd64, Eclipse Adoptium 21.0.13 64bit, MSBDiskFPSet, DiskStateQueue).
+Starting... (2026-11-19 02:24:22)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-19 02:24:24.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.4E-15
+435 states generated, 74 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 8.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 5 and the 95th percentile is 3).
+Finished in 02s at (2026-11-19 02:24:24)
+(TLC run of S2Unmap.cfg finished)

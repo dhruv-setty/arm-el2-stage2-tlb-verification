@@ -1,0 +1,86 @@
+
+6. Printing statistics.
+
+=== s2_walker ===
+
+   Number of wires:                 59
+   Number of wire bits:            847
+   Number of public wires:          26
+   Number of public wire bits:     511
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                 45
+     $add                            1
+     $adff                           1
+     $adffe                          6
+     $and                            3
+     $eq                             5
+     $logic_and                      2
+     $logic_not                      3
+     $logic_or                       1
+     $mux                            8
+     $ne                             6
+     $not                            1
+     $pmux                           3
+     $reduce_and                     4
+     $reduce_bool                    1
+
+
+7. Printing statistics.
+
+=== s2_tlb ===
+
+   Number of wires:                 99
+   Number of wire bits:            648
+   Number of public wires:          33
+   Number of public wire bits:     503
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                 82
+     $add                            1
+     $adff                           1
+     $adffe                         11
+     $and                            6
+     $eq                            16
+     $logic_and                     18
+     $logic_not                      4
+     $logic_or                       6
+     $mux                            4
+     $neg                            1
+     $not                            3
+     $or                             4
+     $pmux                           2
+     $reduce_and                     2
+     $shift                          3
+
+
+6. Printing statistics.
+
+=== s2_tlb ===
+
+   Number of wires:                274
+   Number of wire bits:           1741
+   Number of public wires:          57
+   Number of public wire bits:    1153
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                263
+     $add                            1
+     $adff                           1
+     $adffe                         35
+     $and                           12
+     $eq                            65
+     $logic_and                     72
+     $logic_not                     11
+     $logic_or                      24
+     $mux                           10
+     $neg                            1
+     $not                            2
+     $or                            10
+     $pmux                           8
+     $reduce_and                     8
+     $shift                          3
+
