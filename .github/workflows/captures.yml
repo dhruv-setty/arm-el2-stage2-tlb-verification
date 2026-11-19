@@ -1,0 +1,23 @@
+name: captures
+on:
+  push:
+    branches: [main]
+    paths: ["docs/capture/**", "rtl/**", "sim/**", "spec/**", "tools/**", "bench/synth.sh", "scripts/build_sim.sh", ".github/workflows/captures.yml"]
+  workflow_dispatch:
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21" }
+      - run: sudo apt-get update && sudo apt-get install -y iverilog verilator yosys nextpnr-ecp5 libgmp-dev zlib1g-dev gtkwave geany xvfb openbox xterm xdotool imagemagick librsvg2-bin fonts-dejavu
+      - run: sudo npm install -g netlistsvg
+      - name: Install Sail 0.20.3
+        run: |
+          curl -sL https://github.com/rems-project/sail/releases/download/0.20.3-binary/sail-Linux-x86_64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/sail/bin" >> "$GITHUB_PATH"
+      - run: ./docs/capture/capture.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: iato-v7-captures, path: docs/screenshots }
