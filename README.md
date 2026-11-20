@@ -1,11 +1,110 @@
-# IATO v7: Stage 2 Translation and TLB Maintenance
+# Stage 2 translation and TLB maintenance
 
-IATO v7 is the Arm virtualisation component of the IATO series. It defines, verifies and implements Stage 2 address translation and TLB maintenance for a hypervisor executing at EL2: a Sail model serves as the normative reference, a TLA+ specification verifies the unmap sequence, and the SystemVerilog implementation is validated against the reference by automated cross check. It is not a complete hypervisor or MMU: coverage is limited to the scope listed below, and all results come from simulation and open tool synthesis, with no physical FPGA or silicon measurement. The companion repository, [IATO](https://github.com/whatheheckisthis/Intent-Auditable-Trust-Object), covers coherence, PCIe ordering and DMA; together the two repositories apply one method: state the required behaviour first, then design, verify and measure against it. All numerical results in this document are produced by `./scripts/check.sh` and `./bench/run.sh` at release v0.2.0, except where a section states that a value comes from the captures workflow, and CI repeats every check on each push and pull request. The schematics, waveforms and tool screenshots in [Figures](#figures) are generated in CI by the captures workflow.
+## Summary
+
+This repository specifies, verifies and implements Stage 2 address translation and TLB maintenance for a hypervisor executing at `EL2` on Arm. A Sail model is the normative reference for the Stage 2 walk and the TLBI scopes, a TLA+ specification checks the order in which a hypervisor must issue barriers and TLBI operations when it removes a page from a guest, and SystemVerilog RTL for a Stage 2 table walker and a Stage 2 TLB is checked against the Sail reference in simulation. It is intended for engineers and reviewers working on Arm virtualisation, hypervisors or MMU hardware. It demonstrates a method in which the required behaviour is stated first and every implementation is checked against that statement automatically: the RTL walker is compared with Sail and an independent Python walker over random page tables, and TLC confirms that the required unmap sequence is safe while both incorrect orderings allow a guest access after the frame is freed.
+
+Status: release v0.2.0, limited to the scope listed below and not a complete hypervisor or MMU; all results come from simulation and open tool synthesis, with no physical FPGA or silicon measurement, and integrated timing of the walker and TLB has not been measured.
+
+## Diagram
+
+```mermaid
+flowchart LR
+    VA["Guest VA (EL1)"] -->|stage 1| IPA[IPA]
+    IPA --> TLB["s2_tlb.sv: Stage 2 TLB"]
+    TLB -->|miss| WALK["s2_walker.sv: L0 to L3 walk"]
+    WALK -->|fill| TLB
+    WALK -->|table reads| MEM["Stage 2 tables, VTTBR_EL2 base"]
+    MEM -->|descriptors| WALK
+    WALK --> OUT["PA or fault"]
+    UNMAP["Hypervisor unmap sequence"] -->|TLBI broadcasts| TLB
+    subgraph CHECKS [Verified by]
+        SAIL["Sail stage2.sail"]
+        PY["Python walker s2_vectors.py"]
+        SCOPE["Sail tlbi_scope.sail"]
+        TLA["TLA+ S2Unmap.tla"]
+    end
+    SAIL -.->|reference| WALK
+    PY -.->|probes| WALK
+    SCOPE -.->|TLBI scopes| TLB
+    TLA -.->|ordering| UNMAP
+```
+
+## How to run
+
+Prerequisites, as installed by CI on `ubuntu-24.04` ([.github/workflows/check.yml](.github/workflows/check.yml)); see [Requirements](#requirements) for versions:
+
+- Java 11 or later (CI uses Temurin 21), for TLC.
+- Python 3 and a C compiler.
+- Sail 0.20 with libgmp (CI uses Sail 0.20.3).
+- Icarus Verilog and Verilator.
+- Optional: Yosys and nextpnr-ecp5, which enable synthesis.
+
+1. Clone the repository:
+
+   ```
+   git clone https://github.com/dhruv-setty/arm-el2-stage2-tlb-verification.git
+   cd arm-el2-stage2-tlb-verification
+   ```
+
+2. Install the tools on Ubuntu 24.04, as CI does (Java is installed separately):
+
+   ```
+   sudo apt-get update && sudo apt-get install -y iverilog verilator yosys nextpnr-ecp5 libgmp-dev zlib1g-dev
+   curl -sL https://github.com/rems-project/sail/releases/download/0.20.3-binary/sail-Linux-x86_64.tar.gz | tar xz -C "$HOME"
+   export PATH="$HOME/sail/bin:$PATH"
+   ```
+
+3. Build the Sail reference and the Verilator walker harness:
+
+   ```
+   ./scripts/build_sim.sh
+   ```
+
+   This produces `build/s2_ref`, `build/sail_checks` and `build/obj_w/tb_s2_walker`. The scripts in steps 4 and 6 call it themselves.
+
+4. Run every check (model checking, Sail assertions, cross check, RTL tests and, when `yosys` is on the path, synthesis):
+
+   ```
+   ./scripts/check.sh
+   ```
+
+   If `tools/tla2tools.jar` is absent, the script downloads TLA+ tools v1.8.0 first. Each check prints a line beginning `ok`, and a passing run ends with `all expectations hold` and exits with status 0. A failing check prints `FAIL` and the script exits non zero.
+
+5. Example run: generate seed 1 probes, check the Sail walk against the Python walker, then check the RTL walker at memory latency 8:
+
+   ```
+   python3 tools/s2_vectors.py 1 2000
+   build/s2_ref
+   build/obj_w/tb_s2_walker 8
+   ```
+
+   Expected output, as recorded in [docs/screenshots/sim.log](docs/screenshots/sim.log):
+
+   ```
+   seed 1: 2000 probes, 2793 table words, access flag 74, ok 505, permission 347, translation 1074
+   PASS sail stage 2: 2000 probes, 0 mismatches
+   PASS rtl stage 2 walker: 2000 probes, 0 mismatches, latency 8, 24.49 cycles and 2.61 table reads per walk, 512 four level walks at 37.00 cycles
+   ```
+
+6. Optional: run the five seed cross check and latency sweep, which writes `bench/results/s2_walker.csv`:
+
+   ```
+   ./bench/run.sh
+   ```
+
+## About this repository
+
+The design is the Arm virtualisation part of a series of repositories; a [companion repository](https://github.com/whatheheckisthis/Intent-Auditable-Trust-Object) covers coherence, PCIe ordering and DMA. Together the two repositories apply one method: state the required behaviour first, then design, verify and measure against it. All numerical results in this document are produced by `./scripts/check.sh` and `./bench/run.sh` at release v0.2.0, except where a section states that a value comes from the captures workflow, and CI repeats every check on each push and pull request. The schematics, waveforms and tool screenshots in [Figures](#figures) are generated in CI by the captures workflow.
 
 The key words MUST, MUST NOT, SHALL, SHOULD and MAY in this document are to be interpreted as described in BCP 14 (RFC 2119 and RFC 8174).
 
 ## Contents
 
+- [Summary](#summary)
+- [Diagram](#diagram)
+- [How to run](#how-to-run)
+- [About this repository](#about-this-repository)
 - [Key features](#key-features)
 - [Scope](#scope)
 - [Architecture](#architecture)
@@ -21,7 +120,7 @@ The key words MUST, MUST NOT, SHALL, SHOULD and MAY in this document are to be i
 
 ## Key features
 
-IATO v7 has four parts. Each part pairs a normative statement of the required behaviour with an artefact that runs: RTL in simulation and synthesis, a TLA+ model under TLC, or a Sail model compiled to C.
+The repository has four parts. Each part pairs a normative statement of the required behaviour with an artefact that runs: RTL in simulation and synthesis, a TLA+ model under TLC, or a Sail model compiled to C.
 
 | # | Feature | What runs | Checked by |
 |---|---|---|---|
